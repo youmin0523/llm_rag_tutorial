@@ -8,21 +8,17 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.prompts import ChatPromptTemplate
 
-
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 
 # PDF 문서 로드 후 텍스트로 변환.
 pdf_path = os.path.join("hybrid_rag_search", "sample.pdf")
 loader = PyPDFLoader(pdf_path)
 pages = loader.load_and_split()
-
 
 # print(pages)
 
@@ -31,16 +27,13 @@ pages = loader.load_and_split()
 # 사용자가 입력한 검색 질의와 문서 간의 관련성을 점수화하여 문서의 순위를 매긴다.
 # 문서 내 검색 단어의 빈도와 문서의 전체 길이를 고려하여 과도하게 긴 문서가 높은 점수를 받지 않도록 한다.
 
-
 # 주요 특징
 # 1. 단어 빈도(TF): 특정 단어가 문서에서 얼마나 자주 등장하는지 계산. 특정 단어가 많이 등장할수록 그 단어는 문서의 주요 주제를 나타낸다고 판단
 # 2. 역문서 빈도(IDF): 특정 단어가 전체 문서 집합에서 얼마나 흔하지 않은지 측정. 흔하지 않은 단어일수록 그 단어는 중요한 정보로 간주
 # 3. 문서 길이 정규화: 문서 길이를 보정하는 기능. 너무 긴 문서는 불리하게, 너무 짧은 문서는 유리하게 가중치 조절. 문서가 길어질수록 단지 단어 수가 많다는 이유만으로 쿼리 단어가 더 자주 등장할 수 있어, 실제 관련성과 무관하게 높은 점수를 받을 위험을 방지
 
-
 # 이 알고리즘은 검색 엔진, 정보 검색 시스템 등에서 사용되고 있다.
 # 예를 들어 네이버, 구글과 같은 대형 검색 엔진에서도 사용되며 특히 대규모 문서 데이터베이스에서 검색어의 관련성을 빠르고 정확하게 평가하는데 도움을 준다.
-
 
 # 하이브리드 검색 시스템 구현
 # EnsembleRetriever: 여러 개의 검색기를 결합하여 다양한 검색 기법의 장점을 모두 활용할 수 있도록 하는 역할
@@ -54,13 +47,10 @@ text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
 )
 texts = text_splitter.split_documents(pages)
 
-
 # print(texts)
-
 
 # Embedding
 embeddings_model = OpenAIEmbeddings()
-
 
 # 벡터 스토어 생성
 vectorstore = Chroma.from_documents(texts, embeddings_model)
@@ -68,28 +58,49 @@ chroma_retriever = vectorstore.as_retriever(
     search_type="mmr", search_kwargs={"k": 1, "fetch_k": 4}
 )
 
-
 from langchain_classic.retrievers import BM25Retriever, EnsembleRetriever
-
 
 bm25_retriever = BM25Retriever.from_documents(texts)
 bm25_retriever.k = 2
-
 
 # 알고리즘 조합
 ensemble_retriever = EnsembleRetriever(
     retrievers=[bm25_retriever, chroma_retriever], weights=[0.2, 0.8]
 )
 
-
 # 예시 문의
 query = "에코프로에 대해 알려줘"
-
 
 # 관련 문서 검색
 docs = ensemble_retriever.invoke(query)
 
-
 # print(docs)
 # for doc in docs:
 #   print(doc.page_content)
+
+# 프롬프트 생성
+template = """
+다음 맥락을 바탕으로 질문에 답변해 주세요:
+{context}
+질문: {question}
+"""
+
+prompt = ChatPromptTemplate.from_template(template)
+llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
+
+
+# 전처리
+def format_docs(docs):
+    formatted = "\n\n".join(doc.page_content for doc in docs)
+    return formatted
+
+
+final_rag_chain = (
+    {"context": ensemble_retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+# 답변 출력
+print(final_rag_chain.invoke(query))
