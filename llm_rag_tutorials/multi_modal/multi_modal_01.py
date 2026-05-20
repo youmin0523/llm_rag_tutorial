@@ -30,6 +30,7 @@ def extract_pdf_elements(path, fname):
     new_after_n_chars=3800, # 3800자 이후에 새로운 블록 생성
     combine_text_under_n_chars=2000, # 2000자 이하의 텍스트는 결합
     image_output_dir_path=path, # 이미지가 저장될 경로 설정
+    languages=["kor", "eng"], # OCR 언어: 한국어 + 영어
   )
 
 # 추출한 PDF의 요소들은 텍스트와 테이블로 분류된다. 
